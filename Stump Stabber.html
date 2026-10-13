@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Stump Stabber</title>
+<style>
+:root{--bg:#16323a;--ink:#f3e9d2;--accent:#e8a33d;--bad:#d9534f;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:Georgia,'Times New Roman',serif;overflow:hidden;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+#hud{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);left:0;right:0;display:flex;justify-content:space-between;padding:0 18px;font-size:20px;pointer-events:none}
+canvas{display:block;width:100%;height:100%}
+#msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;background:rgba(10,24,28,.78);padding:24px}
+#msg h1{font-size:44px;margin:0;color:var(--accent)}
+#msg p{margin:0;font-size:18px;max-width:300px}
+#msg button{margin-top:12px;font:inherit;font-size:20px;padding:12px 34px;border:0;border-radius:6px;background:var(--accent);color:#2a1a05;cursor:pointer}
+#msg button:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><span id="lv">Stump 1</span><span id="kn"></span><span id="sc">0</span></div>
+<div id="msg"><h1 id="t">Stump Stabber</h1><p id="d">Tap to throw. Land every blade without hitting one already stuck.</p><button id="b">Play</button></div>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H,R,cx,cy,DPR;
+function fit(){DPR=window.devicePixelRatio||1;W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);R=Math.min(W,H*.5)*.28;cx=W/2;cy=H*.36}
+addEventListener('resize',fit);fit();
+const $=id=>document.getElementById(id);
+let level=1,score=0,best=0,angle=0,stuck=[],left=0,flying=null,state='menu',shards=[],shake=0,speedDir=1,t0=0;
+try{best=+localStorage.getItem('ss_best')||0}catch(e){}
+const KL=R=>R*0.62;
+function spec(l){
+  const pre=Math.min(1+Math.floor(l/2),7);
+  const pats=[()=>.022,()=>.03,t=>.03*Math.sin(t/700)+.02,()=>-.035,t=>.045*Math.sin(t/500),()=>.05,t=>.055*Math.sin(t/380)+.01];
+  return{knives:Math.min(5+l,12),pre,speed:pats[(l-1)%pats.length]};
+}
+let cfg;
+function start(l){
+  level=l;cfg=spec(l);left=cfg.knives;stuck=[];angle=0;flying=null;t0=performance.now();
+  for(let i=0;i<cfg.pre;i++)stuck.push(Math.PI*2*i/cfg.pre+.4);
+  $('lv').textContent='Stump '+l;state='play';$('msg').classList.add('hide');upd();
+}
+function upd(){$('kn').textContent='Blades: '+left;$('sc').textContent=score}
+function throwKnife(){
+  if(state!=='play'||flying||left<=0)return;
+  flying={y:H-70};
+}
+function over(){
+  state='over';shake=14;if(score>best){best=score;try{localStorage.setItem('ss_best',best)}catch(e){}}
+  $('t').textContent='Blade clashed';$('d').textContent='Score '+score+' · Best '+best;$('b').textContent='Try again';
+  setTimeout(()=>$('msg').classList.remove('hide'),500);
+}
+function win(){
+  score+=10*level;state='won';
+  for(let i=0;i<28;i++)shards.push({x:cx,y:cy,vx:(Math.random()-.5)*9,vy:(Math.random()-.5)*9,a:Math.random()*6,life:1});
+  setTimeout(()=>{start(level+1)},900);
+}
+function frame(now){
+  const dt=16;
+  if(state==='play'||state==='won'){
+    const sp=state==='play'?cfg.speed(now-t0):.1;angle+=sp;
+  }
+  if(flying){
+    flying.y-=H*.032;
+    const hitY=cy+R+KL(R)*.55;
+    if(flying.y<=hitY){
+      const a=((Math.PI/2-angle)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
+      const gap=.2;let clash=false;
+      for(const s of stuck){let d=(((s-a)%(Math.PI*2))+Math.PI*2)%(Math.PI*2);d=Math.min(d,Math.PI*2-d);if(d<gap){clash=true;break}}
+      flying=null;
+      if(clash){for(let i=0;i<10;i++)shards.push({x:cx,y:cy+R,vx:(Math.random()-.5)*8,vy:Math.random()*6,a:0,life:1});over();}
+      else{stuck.push(a);left--;score++;shake=4;upd();if(left<=0)win();}
+    }
+  }
+  draw();requestAnimationFrame(frame);
+}
+function draw(){
+  ctx.save();
+  if(shake>0){ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);shake*=.85;if(shake<.3)shake=0}
+  ctx.fillStyle='#16323a';ctx.fillRect(-20,-20,W+40,H+40);
+  // log
+  ctx.save();ctx.translate(cx,cy);ctx.rotate(angle);
+  ctx.fillStyle='#8a5a2b';ctx.beginPath();ctx.arc(0,0,R,0,7);ctx.fill();
+  ctx.strokeStyle='#5c3a18';ctx.lineWidth=3;
+  for(let r=R*.85;r>6;r-=R*.17){ctx.beginPath();ctx.arc(0,0,r,0,7);ctx.stroke()}
+  ctx.fillStyle='#e8a33d';ctx.beginPath();ctx.arc(0,0,R*.1,0,7);ctx.fill();
+  // stuck knives (angle measured so that bottom = hit point)
+  for(const s of stuck){ctx.save();ctx.rotate(s-Math.PI/2);knife(R*.98,0);ctx.restore()}
+  ctx.restore();
+  // flying
+  if(flying){ctx.save();ctx.translate(cx,flying.y);knife(0,0,true);ctx.restore()}
+  // queued blade at bottom
+  if(state==='play'&&!flying&&left>0){ctx.save();ctx.translate(cx,H-70);knife(0,0,true);ctx.restore()}
+  // shards
+  shards=shards.filter(p=>p.life>0);
+  for(const p of shards){p.x+=p.vx;p.y+=p.vy;p.vy+=.3;p.life-=.02;ctx.globalAlpha=Math.max(p.life,0);ctx.fillStyle='#c98a47';ctx.fillRect(p.x,p.y,7,4)}
+  ctx.globalAlpha=1;ctx.restore();
+}
+function knife(off,len,solo){
+  const L=KL(R);
+  ctx.save();ctx.translate(0,solo?0:off);
+  ctx.fillStyle='#dfe7ea';ctx.beginPath();ctx.moveTo(-7,0);ctx.lineTo(7,0);ctx.lineTo(0,-L*.55);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#b23a2e';ctx.fillRect(-6,0,12,L*.5);
+  ctx.fillStyle='#e8a33d';ctx.fillRect(-10,0,20,4);
+  ctx.restore();
+}
+['pointerdown'].forEach(e=>addEventListener(e,ev=>{if(ev.target.tagName==='BUTTON')return;throwKnife()}));
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();throwKnife()}});
+$('b').onclick=()=>{score=0;start(1)};
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
